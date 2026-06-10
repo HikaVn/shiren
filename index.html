@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEON DELVE — 電脳塔の探索者</title>
+<style>
+  :root {
+    --bg: #05080f;
+    --panel: #0a1020;
+    --border: #1d3050;
+    --text: #cfe3ff;
+    --accent: #00e5ff;
+    --green: #4dff88;
+    --yellow: #ffd866;
+    --red: #ff5c5c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Courier New", "MS Gothic", monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 8px;
+  }
+  #status-bar {
+    width: 100%;
+    max-width: 1232px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 12px;
+    display: flex;
+    gap: 18px;
+    font-size: 14px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  #status-bar .label { color: var(--accent); }
+  #hp-bar-wrap {
+    flex: 1; min-width: 120px; max-width: 260px;
+    background: #000; border: 1px solid var(--border);
+    border-radius: 3px; height: 16px; position: relative;
+    align-self: center;
+  }
+  #hp-bar { height: 100%; background: var(--green); border-radius: 2px; transition: width .15s; }
+  #game-wrap { position: relative; }
+  canvas {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    image-rendering: pixelated;
+    max-width: 100%;
+  }
+  #log {
+    width: 100%;
+    max-width: 1232px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-top: 6px;
+    padding: 6px 12px;
+    height: 96px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  #log .msg-info { color: var(--text); }
+  #log .msg-good { color: var(--green); }
+  #log .msg-warn { color: var(--yellow); }
+  #log .msg-bad { color: var(--red); }
+  #log .msg-sys { color: var(--accent); }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 6, 12, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay h1 { color: var(--accent); font-size: 30px; margin-bottom: 12px; text-shadow: 0 0 12px var(--accent); }
+  .overlay h2 { color: var(--red); font-size: 26px; margin-bottom: 12px; }
+  .overlay p { margin: 4px 0; font-size: 14px; }
+  .overlay .key { color: var(--yellow); }
+  .hidden { display: none !important; }
+  #menu {
+    position: absolute;
+    top: 16px; right: 16px;
+    min-width: 320px;
+    max-width: 420px;
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 14px;
+    line-height: 1.7;
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.25);
+  }
+  #menu .title { color: var(--accent); border-bottom: 1px solid var(--border); margin-bottom: 6px; padding-bottom: 4px; }
+  #menu .item { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #menu .item.sel { background: #14305a; color: #fff; }
+  #menu .item .equipped { color: var(--green); }
+  #menu .hint { color: #6e87ad; font-size: 12px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 4px; }
+  #help {
+    width: 100%;
+    max-width: 1232px;
+    color: #6e87ad;
+    font-size: 12px;
+    margin-top: 4px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div id="status-bar">
+    <span><span class="label">B</span><span id="st-floor">1</span>F</span>
+    <span><span class="label">Lv</span> <span id="st-level">1</span></span>
+    <span>HP <span id="st-hp">15/15</span></span>
+    <div id="hp-bar-wrap"><div id="hp-bar" style="width:100%"></div></div>
+    <span><span class="label">充電率</span> <span id="st-fullness">100%</span></span>
+    <span><span class="label">攻</span> <span id="st-atk">-</span></span>
+    <span><span class="label">防</span> <span id="st-def">-</span></span>
+    <span><span class="label">クレジット</span> <span id="st-gold">0</span></span>
+  </div>
+
+  <div id="game-wrap">
+    <canvas id="game"></canvas>
+    <div id="menu" class="hidden"></div>
+    <div id="title-overlay" class="overlay">
+      <h1>NEON DELVE</h1>
+      <p>— 電脳塔の探索者 —</p>
+      <p style="margin-top:14px">西暦2099年。暴走したAI《トグロ》が支配する電脳塔。</p>
+      <p>その最深部に眠る「神髄コア」を求め、流浪のランナーは塔へ潜る。</p>
+      <p style="margin-top:14px"><span class="key">移動:</span> 矢印キー / W A D X（斜め: Q E Z C）</p>
+      <p><span class="key">攻撃:</span> 敵の方向へ移動 ／ <span class="key">足踏み:</span> S または .</p>
+      <p><span class="key">アイテム:</span> I ／ <span class="key">拾う:</span> G ／ <span class="key">階段:</span> &gt;</p>
+      <p style="margin-top:18px; color:var(--accent)">Enter キーで潜入開始</p>
+    </div>
+    <div id="gameover-overlay" class="overlay hidden">
+      <h2 id="gameover-title">接続切断…</h2>
+      <p id="gameover-detail"></p>
+      <p style="margin-top:14px">アイテムとクレジットをすべて失った。</p>
+      <p style="margin-top:14px; color:var(--accent)">Enter キーで再挑戦（Lv1 から）</p>
+    </div>
+    <div id="clear-overlay" class="overlay hidden">
+      <h1>神髄コア 奪取成功！</h1>
+      <p id="clear-detail"></p>
+      <p style="margin-top:14px">AI《トグロ》は沈黙し、塔に静寂が戻った——</p>
+      <p style="margin-top:14px; color:var(--accent)">Enter キーで新たな潜入へ</p>
+    </div>
+  </div>
+
+  <div id="log"></div>
+  <div id="help">
+    矢印/WADX: 移動・攻撃 ｜ QEZC: 斜め移動 ｜ S または .: 足踏み ｜ I: アイテム ｜ G: 拾う ｜ &gt;: 階段を降りる ｜ Esc: 閉じる
+  </div>
+
+<script src="js/rng.js"></script>
+<script src="js/dungeon.js"></script>
+<script src="js/data.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
