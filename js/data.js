@@ -71,7 +71,7 @@ const MONSTERS = [
     desc: "深層を守る大型警備機。",
   },
   {
-    id: "dekkai", name: "デッ怪ギガメック", glyph: "Ω", color: "#ff2d78",
+    id: "dekkai", name: "ビヒモス・ギガメック", glyph: "Ω", color: "#ff2d78",
     hp: 90, atk: 24, def: 14, exp: 300, speed: 1, floors: [7, 20], big: true,
     rare: true,
     desc: "規格外の超大型機体。倒せば莫大な経験値を得られるが、近付くのは命懸け。",
@@ -84,12 +84,12 @@ const MONSTERS = [
   {
     id: "security_enforcer", name: "セキュリティエンフォーサー", glyph: "E", color: "#ff7a00",
     hp: 60, atk: 22, def: 12, exp: 150, speed: 1, floors: [0, 0], rare: true,
-    desc: "泥棒を取り締まる執行ユニット。降下シャフトを封鎖する。",
+    desc: "窃盗犯を取り締まる執行ユニット。降下シャフトを封鎖する。",
   },
   {
-    id: "togro_avatar", name: "トグロ・アバター", glyph: "Ψ", color: "#ff0044",
+    id: "togro_avatar", name: "セルペンス・アバター", glyph: "Ψ", color: "#ff0044",
     hp: 80, atk: 20, def: 12, exp: 500, speed: 1, floors: [20, 20], boss: true,
-    desc: "AI《トグロ》の戦闘端末。神髄コアを守護する。",
+    desc: "AI《セルペンス》の戦闘端末。シンギュラリティコアを守護する。",
   },
 ];
 
@@ -129,7 +129,7 @@ const ITEMS = [
   {
     id: "muscle_booster", name: "マッスルブースター", cat: "herb", glyph: "!", color: "#ff8a5c",
     w: 7, price: 350,
-    desc: "ちからの最大値が1上がる。",
+    desc: "身体出力の最大値が1上がる。",
   },
   {
     id: "exp_chip_serum", name: "経験促進剤", cat: "herb", glyph: "!", color: "#e0c4ff",
@@ -144,7 +144,7 @@ const ITEMS = [
   {
     id: "toxin_vial", name: "劣化ウイルス", cat: "herb", glyph: "!", color: "#9dff5c",
     w: 12, bad: true, price: 50,
-    desc: "ちからが1下がる毒物。敵に投げつければ弱体化できる。",
+    desc: "身体出力が1下がる毒物。敵に投げつければ弱体化できる。",
   },
   {
     id: "confusion_gas", name: "混乱ガス", cat: "herb", glyph: "!", color: "#ff5c8a",
@@ -281,7 +281,7 @@ const ITEMS = [
   {
     id: "synth_container", name: "合成コンテナ", cat: "pot", glyph: "U", color: "#ff8ad8",
     w: 5, capacity: [2, 3], identified: true, price: 1500,
-    desc: "同じ装備を入れると強化値を、同じガジェットを入れると回数を合成する。取り出すには割るしかない。",
+    desc: "同じ装備を入れると強化値を、同じガジェットを入れると回数を合成する。取り出すには筐体を破壊するしかない。",
   },
 
   // ===== クレジット（お金） =====
@@ -291,11 +291,11 @@ const ITEMS = [
     desc: "電子通貨。",
   },
 
-  // ===== 神髄コア（クリアアイテム・最深層のみ） =====
+  // ===== シンギュラリティコア（クリアアイテム・最深層のみ） =====
   {
-    id: "shinzui_core", name: "神髄コア", cat: "goal", glyph: "◆", color: "#ff2d78",
+    id: "shinzui_core", name: "シンギュラリティコア", cat: "goal", glyph: "◆", color: "#ff2d78",
     w: 0, identified: true, price: 99999,
-    desc: "AI《トグロ》の中枢コア。これを持ち帰るのが目的だ。",
+    desc: "AI《セルペンス》の中枢コア。これを持ち帰るのが目的だ。",
   },
 ];
 

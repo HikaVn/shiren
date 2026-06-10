@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>NEON DELVE — 電脳塔の探索者</title>
 <style>
   :root {
@@ -117,6 +117,67 @@
     margin-top: 4px;
     text-align: center;
   }
+  /* ---------------- タッチ操作（スマホ・タブレット） ---------------- */
+  #touchbar {
+    display: none;
+    width: 100%;
+    max-width: 1232px;
+    margin-top: 8px;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 4px;
+  }
+  .pad-btn, .act-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 20px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+  .pad-btn:active, .act-btn:active { background: #14305a; }
+  #actbtns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(76px, 1fr));
+    gap: 6px;
+    flex: 1;
+    max-width: 220px;
+  }
+  .act-btn {
+    font-size: 14px;
+    padding: 14px 4px;
+    color: var(--text);
+  }
+  @media (max-width: 820px) {
+    body { padding: 4px; }
+    #touchbar { display: flex; }
+    #help { display: none; }
+    #status-bar { gap: 8px; font-size: 12px; padding: 4px 8px; }
+    #log { height: 72px; font-size: 12px; }
+    #menu {
+      top: 8px; right: 8px; left: 8px;
+      min-width: 0;
+      max-width: none;
+      font-size: 15px;
+      line-height: 2.1;
+    }
+    canvas { width: 100%; height: auto; }
+    .overlay h1 { font-size: 22px; }
+    .overlay p { font-size: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -137,24 +198,45 @@
     <div id="title-overlay" class="overlay">
       <h1>NEON DELVE</h1>
       <p>— 電脳塔の探索者 —</p>
-      <p style="margin-top:14px">西暦2099年。暴走したAI《トグロ》が支配する電脳塔。</p>
-      <p>その最深部に眠る「神髄コア」を求め、流浪のランナーは塔へ潜る。</p>
+      <p style="margin-top:14px">西暦2099年。暴走したAI《セルペンス》が支配する電脳塔。</p>
+      <p>その最深部に眠る「シンギュラリティコア」を求め、流浪のランナーは塔へ潜る。</p>
       <p style="margin-top:14px"><span class="key">移動:</span> 矢印キー / W A D X（斜め: Q E Z C）</p>
       <p><span class="key">攻撃:</span> 敵の方向へ移動 ／ <span class="key">足踏み:</span> S または .</p>
       <p><span class="key">アイテム:</span> I ／ <span class="key">拾う:</span> G ／ <span class="key">階段:</span> &gt;</p>
-      <p style="margin-top:18px; color:var(--accent)">Enter キーで潜入開始</p>
+      <p>スマホでは画面下のパッドとボタンで操作</p>
+      <p style="margin-top:18px; color:var(--accent)">Enter キーまたはタップで潜入開始</p>
     </div>
     <div id="gameover-overlay" class="overlay hidden">
       <h2 id="gameover-title">接続切断…</h2>
       <p id="gameover-detail"></p>
       <p style="margin-top:14px">アイテムとクレジットをすべて失った。</p>
-      <p style="margin-top:14px; color:var(--accent)">Enter キーで再挑戦（Lv1 から）</p>
+      <p style="margin-top:14px; color:var(--accent)">Enter キーまたはタップで再挑戦（Lv1 から）</p>
     </div>
     <div id="clear-overlay" class="overlay hidden">
-      <h1>神髄コア 奪取成功！</h1>
+      <h1>シンギュラリティコア 奪取成功！</h1>
       <p id="clear-detail"></p>
-      <p style="margin-top:14px">AI《トグロ》は沈黙し、塔に静寂が戻った——</p>
-      <p style="margin-top:14px; color:var(--accent)">Enter キーで新たな潜入へ</p>
+      <p style="margin-top:14px">AI《セルペンス》は沈黙し、塔に静寂が戻った——</p>
+      <p style="margin-top:14px; color:var(--accent)">Enter キーまたはタップで新たな潜入へ</p>
+    </div>
+  </div>
+
+  <div id="touchbar">
+    <div id="dpad">
+      <button class="pad-btn" id="pad-nw">↖</button>
+      <button class="pad-btn" id="pad-n">↑</button>
+      <button class="pad-btn" id="pad-ne">↗</button>
+      <button class="pad-btn" id="pad-w">←</button>
+      <button class="pad-btn" id="pad-c">・</button>
+      <button class="pad-btn" id="pad-e">→</button>
+      <button class="pad-btn" id="pad-sw">↙</button>
+      <button class="pad-btn" id="pad-s">↓</button>
+      <button class="pad-btn" id="pad-se">↘</button>
+    </div>
+    <div id="actbtns">
+      <button class="act-btn" id="btn-inventory">道具</button>
+      <button class="act-btn" id="btn-pickup">拾う</button>
+      <button class="act-btn" id="btn-stairs">階段▼</button>
+      <button class="act-btn" id="btn-confirm">決定</button>
     </div>
   </div>
 

@@ -1,4 +1,5 @@
 // 描画（Canvas）— 近未来ネオン調のタイル表示
+// スマホ等の小画面ではプレイヤー追従カメラで一部領域のみ拡大表示する
 "use strict";
 
 const CELL = 22; // タイル1マスのピクセルサイズ
@@ -24,21 +25,50 @@ class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
+    this.viewW = 0;
+    this.viewH = 0;
+    this.camX = 0;
+    this.camY = 0;
   }
 
-  resize(mapW, mapH) {
-    this.canvas.width = mapW * CELL;
-    this.canvas.height = mapH * CELL;
+  // ビューポートのタイル数を設定（フルマップ or 追従カメラ）
+  setView(viewW, viewH) {
+    if (this.viewW !== viewW || this.viewH !== viewH) {
+      this.viewW = viewW;
+      this.viewH = viewH;
+      this.canvas.width = viewW * CELL;
+      this.canvas.height = viewH * CELL;
+    }
   }
+
+  updateCamera(game) {
+    const { map, player } = game;
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    this.camX = clamp(player.x - Math.floor(this.viewW / 2), 0, Math.max(0, map.w - this.viewW));
+    this.camY = clamp(player.y - Math.floor(this.viewH / 2), 0, Math.max(0, map.h - this.viewH));
+  }
+
+  inView(x, y) {
+    return x >= this.camX && x < this.camX + this.viewW &&
+           y >= this.camY && y < this.camY + this.viewH;
+  }
+
+  px(x) { return (x - this.camX) * CELL; }
+  py(y) { return (y - this.camY) * CELL; }
 
   draw(game) {
     const { map, player } = game;
+    if (!this.viewW) this.setView(map.w, map.h);
+    this.updateCamera(game);
     const ctx = this.ctx;
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    for (let y = 0; y < map.h; y++) {
-      for (let x = 0; x < map.w; x++) {
+    const x0 = this.camX, y0 = this.camY;
+    const x1 = Math.min(map.w, x0 + this.viewW), y1 = Math.min(map.h, y0 + this.viewH);
+
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         if (!game.memory[y * map.w + x]) continue; // 未踏破は描かない
         this.drawTile(ctx, map, x, y);
       }
@@ -50,27 +80,29 @@ class Renderer {
       ctx.fillStyle = "rgba(255, 216, 102, 0.10)";
       for (let y = r.y; y < r.y + r.h; y++) {
         for (let x = r.x; x < r.x + r.w; x++) {
-          if (game.memory[y * map.w + x]) ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+          if (game.memory[y * map.w + x] && this.inView(x, y)) {
+            ctx.fillRect(this.px(x), this.py(y), CELL, CELL);
+          }
         }
       }
     }
 
     // アイテム
     for (const it of game.floorItems) {
-      if (!game.memory[it.y * map.w + it.x]) continue;
+      if (!game.memory[it.y * map.w + it.x] || !this.inView(it.x, it.y)) continue;
       this.drawGlyph(ctx, it.x, it.y, it.def.glyph, it.def.color || COLORS.itemDefault);
     }
 
     // 罠（発見済みのみ）
     for (const trap of game.traps) {
-      if (trap.revealed && game.visible[trap.y * map.w + trap.x]) {
+      if (trap.revealed && game.visible[trap.y * map.w + trap.x] && this.inView(trap.x, trap.y)) {
         this.drawGlyph(ctx, trap.x, trap.y, "▲", COLORS.trapVisible);
       }
     }
 
     // モンスター（視界内のみ）
     for (const m of game.monsters) {
-      if (!game.visible[m.y * map.w + m.x]) continue;
+      if (!game.visible[m.y * map.w + m.x] || !this.inView(m.x, m.y)) continue;
       this.drawGlyph(ctx, m.x, m.y, m.def.glyph, m.def.color);
       this.drawHpBar(ctx, m);
     }
@@ -78,13 +110,13 @@ class Renderer {
     // 店主（非敵対時。敵対後は通常モンスターとして描画される）
     if (game.shop && !game.shop.hostile) {
       const k = game.shop.keeper;
-      if (game.visible[k.y * map.w + k.x]) {
+      if (game.visible[k.y * map.w + k.x] && this.inView(k.x, k.y)) {
         this.drawGlyph(ctx, k.x, k.y, k.def.glyph, k.def.color);
       }
     }
 
     // 仲間
-    if (game.ally && game.ally.hp > 0) {
+    if (game.ally && game.ally.hp > 0 && this.inView(game.ally.x, game.ally.y)) {
       this.drawGlyph(ctx, game.ally.x, game.ally.y, "@", COLORS.ally);
       this.drawHpBar(ctx, game.ally);
     }
@@ -94,11 +126,11 @@ class Renderer {
 
     // 視界外の踏破済みエリアを暗くする
     ctx.fillStyle = COLORS.fovDim;
-    for (let y = 0; y < map.h; y++) {
-      for (let x = 0; x < map.w; x++) {
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         const i = y * map.w + x;
         if (game.memory[i] && !game.visible[i]) {
-          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+          ctx.fillRect(this.px(x), this.py(y), CELL, CELL);
         }
       }
     }
@@ -106,8 +138,8 @@ class Renderer {
 
   drawTile(ctx, map, x, y) {
     const t = map.get(x, y);
-    const px = x * CELL,
-      py = y * CELL;
+    const px = this.px(x),
+      py = this.py(y);
     if (t === TILE.WALL) {
       ctx.fillStyle = COLORS.wall;
       ctx.fillRect(px, py, CELL, CELL);
@@ -136,15 +168,15 @@ class Renderer {
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 6;
-    ctx.fillText(glyph, x * CELL + CELL / 2, y * CELL + CELL / 2 + 1);
+    ctx.fillText(glyph, this.px(x) + CELL / 2, this.py(y) + CELL / 2 + 1);
     ctx.shadowBlur = 0;
   }
 
   drawHpBar(ctx, entity) {
     const ratio = Math.max(0, entity.hp / entity.maxHp);
     if (ratio >= 1) return;
-    const px = entity.x * CELL,
-      py = entity.y * CELL;
+    const px = this.px(entity.x),
+      py = this.py(entity.y);
     ctx.fillStyle = "#000";
     ctx.fillRect(px + 2, py + CELL - 4, CELL - 4, 3);
     ctx.fillStyle = ratio > 0.5 ? "#4dff88" : ratio > 0.25 ? "#ffd866" : "#ff5c5c";
