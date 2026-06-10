@@ -43,6 +43,7 @@ node --check js/*.js # 構文チェック
   さらなる表現（法線マップ風ライティング等）が必要になったら PixiJS(WebGL) 移行を検討
 - 描画エフェクトは `game.addFx({type, ...})` でキューに積み、render.js が消費する
   （type: pop / burst / ring / beam / shake）
+- JSを変更したら index.html の `?v=` を上げる（ブラウザキャッシュ対策）
 - ブランチ `claude/shiren-roguelike-game-s7od11` で開発し、PRを作成。
   マージはユーザーの指示（「マージして」）で行う。マージすると GitHub Pages へ自動デプロイ
 

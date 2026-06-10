@@ -7,9 +7,11 @@ const CELL = 22; // タイル1マスのピクセルサイズ
 
 const COLORS = {
   bg: "#05080f",
-  wallTop: "#16233a",
-  wallFront: "#0b1424",
-  wallEdge: "#2a4470",
+  wallTop: "#2a4060",
+  wallTopEdge: "#46689c",
+  wallFrontHi: "#13223a",
+  wallFrontLo: "#070d18",
+  neonTrim: "rgba(0, 229, 255, 0.45)",
   floor: "#0c1626",
   floorGrid: "#13243d",
   corridor: "#0a1220",
@@ -263,19 +265,31 @@ class Renderer {
     const px = this.px(x), py = this.py(y);
     if (t === TILE.WALL) {
       if (this.drawSprite(ctx, x, y, ["tile_wall"])) return;
-      // 疑似3D壁: 下が歩行可能なら前面（暗い面）を見せる
+      // 疑似3D壁: 下が歩行可能なら「上面+前面」で立体表現
       const frontFace = map.isWalkable(x, y + 1);
       if (frontFace) {
+        const topH = CELL * 0.38;
+        // 上面（明るいスラブ）
         ctx.fillStyle = COLORS.wallTop;
-        ctx.fillRect(px, py, CELL, CELL * 0.55);
-        ctx.fillStyle = COLORS.wallFront;
-        ctx.fillRect(px, py + CELL * 0.55, CELL, CELL * 0.45);
-        ctx.fillStyle = COLORS.wallEdge;
-        ctx.fillRect(px, py + CELL * 0.55 - 1, CELL, 1.5);
+        ctx.fillRect(px, py, CELL, topH);
+        ctx.fillStyle = COLORS.wallTopEdge;
+        ctx.fillRect(px, py, CELL, 1.5);
+        // 前面（暗い壁面・縦グラデーション + パネル継ぎ目）
+        const grad = ctx.createLinearGradient(0, py + topH, 0, py + CELL);
+        grad.addColorStop(0, COLORS.wallFrontHi);
+        grad.addColorStop(1, COLORS.wallFrontLo);
+        ctx.fillStyle = grad;
+        ctx.fillRect(px, py + topH, CELL, CELL - topH);
+        ctx.fillStyle = "rgba(70, 104, 156, 0.25)";
+        ctx.fillRect(px + CELL * 0.33, py + topH, 1, CELL - topH);
+        ctx.fillRect(px + CELL * 0.66, py + topH, 1, CELL - topH);
+        // 上面と前面の境目にネオントリム
+        ctx.fillStyle = COLORS.neonTrim;
+        ctx.fillRect(px, py + topH - 1, CELL, 2);
       } else {
         ctx.fillStyle = COLORS.wallTop;
         ctx.fillRect(px, py, CELL, CELL);
-        ctx.strokeStyle = "rgba(42, 68, 112, 0.35)";
+        ctx.strokeStyle = "rgba(70, 104, 156, 0.3)";
         ctx.lineWidth = 1;
         ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
       }
@@ -288,6 +302,14 @@ class Renderer {
         ctx.strokeStyle = COLORS.floorGrid;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
+      }
+      // 上が壁なら、壁が床に落とす影（立体感の決め手）
+      if (map.get(x, y - 1) === TILE.WALL) {
+        const sh = ctx.createLinearGradient(0, py, 0, py + CELL * 0.45);
+        sh.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+        sh.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = sh;
+        ctx.fillRect(px, py, CELL, CELL * 0.45);
       }
       if (t === TILE.STAIRS) {
         if (!this.drawSprite(ctx, x, y, ["tile_stairs"])) {
@@ -302,6 +324,13 @@ class Renderer {
       if (this.drawSprite(ctx, x, y, ["tile_corridor", "tile_floor"])) return;
       ctx.fillStyle = COLORS.corridor;
       ctx.fillRect(px, py, CELL, CELL);
+      if (map.get(x, y - 1) === TILE.WALL) {
+        const sh = ctx.createLinearGradient(0, py, 0, py + CELL * 0.4);
+        sh.addColorStop(0, "rgba(0, 0, 0, 0.4)");
+        sh.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = sh;
+        ctx.fillRect(px, py, CELL, CELL * 0.4);
+      }
     }
   }
 
