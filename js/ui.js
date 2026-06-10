@@ -38,7 +38,8 @@ class UI {
       `${p.fullness}%` + (p.overcharge ? " ⚡OC" : "");
     document.getElementById("st-atk").textContent = g.playerAtkValue();
     document.getElementById("st-def").textContent = g.playerDefValue();
-    document.getElementById("st-gold").textContent = p.credits;
+    document.getElementById("st-gold").textContent =
+      p.credits + (g.shop && g.shop.unpaid > 0 ? `（未払い ${g.shop.unpaid}）` : "");
   }
 
   // ------------------------------------------------------------ インベントリ
@@ -62,6 +63,11 @@ class UI {
     if (cat === "herb") acts.push({ id: "use", label: "飲む" });
     if (cat === "chip") acts.push({ id: "use", label: "起動する" });
     if (cat === "gadget") acts.push({ id: "gadget", label: "発射する" });
+    if (cat === "pot") {
+      acts.push({ id: "potIn", label: "入れる" });
+      if (item.def.id === "storage_container") acts.push({ id: "potOut", label: "出す" });
+      acts.push({ id: "potBreak", label: "割る" });
+    }
     if (cat === "weapon" || cat === "shield") {
       const equipped = this.game.player.weapon === item || this.game.player.shield === item;
       acts.push({ id: "use", label: equipped ? "外す" : "装備する" });
@@ -126,6 +132,26 @@ class UI {
       hint.className = "hint";
       hint.textContent = "↑↓: 選択 / Enter: 決定 / Esc: 戻る";
       el.appendChild(hint);
+    } else if (this.menuMode === "potInsert") {
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = `${g.displayName(this.potTarget)} に入れる`;
+      el.appendChild(title);
+      const candidates = this.potCandidates();
+      candidates.forEach((item, i) => {
+        const div = document.createElement("div");
+        div.className = "item" + (i === this.potIndex ? " sel" : "");
+        div.textContent = `${item.def.glyph} ${g.displayName(item)}`;
+        div.addEventListener("click", () => {
+          this.potIndex = i;
+          this.executePotInsert();
+        });
+        el.appendChild(div);
+      });
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.textContent = "↑↓: 選択 / Enter: 入れる / Esc: 戻る";
+      el.appendChild(hint);
     } else if (this.menuMode === "direction") {
       const title = document.createElement("div");
       title.className = "title";
@@ -170,6 +196,27 @@ class UI {
         this.menuMode = "direction";
         this.renderMenu();
         break;
+      case "potIn": {
+        const candidates = g.player.inventory.filter((it) => it !== item && it.def.cat !== "pot");
+        if (candidates.length === 0) {
+          g.log("コンテナに入れられるアイテムを持っていない。");
+          this.closeMenu();
+          break;
+        }
+        this.menuMode = "potInsert";
+        this.potTarget = item;
+        this.potIndex = 0;
+        this.renderMenu();
+        break;
+      }
+      case "potOut":
+        this.closeMenu();
+        g.takeFromPot(item);
+        break;
+      case "potBreak":
+        this.closeMenu();
+        g.breakPot(item);
+        break;
       case "desc": {
         const d = item.def;
         const known = d.identified || g.identified.has(d.id);
@@ -178,6 +225,20 @@ class UI {
         break;
       }
     }
+  }
+
+  potCandidates() {
+    return this.game.player.inventory.filter(
+      (it) => it !== this.potTarget && it.def.cat !== "pot"
+    );
+  }
+
+  executePotInsert() {
+    const candidates = this.potCandidates();
+    const item = candidates[this.potIndex];
+    const pot = this.potTarget;
+    this.closeMenu();
+    if (item && pot) this.game.putIntoPot(pot, item);
   }
 
   // 方向選択中の入力。処理したら true
@@ -194,8 +255,8 @@ class UI {
     if (!this.menuMode) return false;
     const g = this.game;
     if (key === "Escape") {
-      if (this.menuMode === "action" || this.menuMode === "direction") {
-        this.menuMode = "inventory";
+      if (this.menuMode === "action" || this.menuMode === "direction" || this.menuMode === "potInsert") {
+        this.menuMode = this.menuMode === "potInsert" ? "action" : "inventory";
         this.pendingDirection = null;
         this.renderMenu();
       } else {
@@ -206,21 +267,27 @@ class UI {
     if (this.menuMode === "direction") return true; // 方向キーは main.js 側で処理
     const listLen = this.menuMode === "inventory"
       ? g.player.inventory.length
-      : this.actionsFor(this.selectedItem).length;
-    if (key === "ArrowUp" || key === "w" || key === "W") {
-      if (this.menuMode === "inventory") this.menuIndex = (this.menuIndex - 1 + listLen) % Math.max(1, listLen);
-      else this.actionIndex = (this.actionIndex - 1 + listLen) % Math.max(1, listLen);
+      : this.menuMode === "potInsert"
+        ? this.potCandidates().length
+        : this.actionsFor(this.selectedItem).length;
+    const moveSel = (delta) => {
+      const len = Math.max(1, listLen);
+      if (this.menuMode === "inventory") this.menuIndex = (this.menuIndex + delta + len) % len;
+      else if (this.menuMode === "potInsert") this.potIndex = (this.potIndex + delta + len) % len;
+      else this.actionIndex = (this.actionIndex + delta + len) % len;
       this.renderMenu();
+    };
+    if (key === "ArrowUp" || key === "w" || key === "W") {
+      moveSel(-1);
       return true;
     }
     if (key === "ArrowDown" || key === "s" || key === "S") {
-      if (this.menuMode === "inventory") this.menuIndex = (this.menuIndex + 1) % Math.max(1, listLen);
-      else this.actionIndex = (this.actionIndex + 1) % Math.max(1, listLen);
-      this.renderMenu();
+      moveSel(1);
       return true;
     }
     if (key === "Enter") {
       if (this.menuMode === "inventory") this.selectMenuItem();
+      else if (this.menuMode === "potInsert") this.executePotInsert();
       else this.executeAction();
       return true;
     }

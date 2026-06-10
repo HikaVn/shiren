@@ -21,6 +21,9 @@ class Item {
     this.charges = def.charges ? rng.int(def.charges[0], def.charges[1]) : 0;
     this.count = def.count ? rng.int(def.count[0], def.count[1]) : 1;
     this.amount = 0; // クレジット用
+    this.capacity = def.capacity ? rng.int(def.capacity[0], def.capacity[1]) : 0;
+    this.contents = []; // コンテナの中身
+    this.shopPrice = 0; // 店の商品（未払い）なら価格
     this.x = -1;
     this.y = -1;
   }
@@ -154,6 +157,34 @@ class Game {
       }
     }
 
+    // 店の生成（2F以降で15%・開始部屋とモンスターハウス以外）
+    this.shop = null;
+    if (this.floor >= 2 && this.rng.chance(0.15)) {
+      const candidates = this.map.rooms.filter(
+        (r) => r !== startRoom && r !== monsterHouseRoom && r.w >= 4 && r.h >= 4
+      );
+      if (candidates.length) {
+        const room = this.rng.pick(candidates);
+        const keeperDef = MONSTERS.find((m) => m.id === "merchant_droid");
+        const kp = randomFloorInRoom(this.rng, this.map, room, occupied) || { x: room.cx, y: room.cy };
+        const keeper = new Monster(keeperDef, kp.x, kp.y, this);
+        keeper.asleep = false;
+        this.shop = { room, keeper, unpaid: 0, hostile: false };
+        // 商品を並べる（3〜5個・値札付き）
+        const stock = this.rng.int(3, 5);
+        for (let i = 0; i < stock; i++) {
+          const pos = randomFloorInRoom(this.rng, this.map, room, occupied);
+          if (!pos) break;
+          const pool = ITEMS.filter((d) => d.cat !== "goal" && d.cat !== "money" && d.w > 0);
+          const item = new Item(this.rng.weighted(pool), this.rng);
+          item.shopPrice = item.def.price;
+          item.x = pos.x;
+          item.y = pos.y;
+          this.floorItems.push(item);
+        }
+      }
+    }
+
     // アイテム配置（4〜7個）
     const itemCount = this.rng.int(4, 7);
     for (let i = 0; i < itemCount; i++) {
@@ -161,11 +192,13 @@ class Game {
       if (pos) this.dropNewItem(pos.x, pos.y);
     }
 
-    // 罠配置（4〜8個・隠れている）
+    // 罠配置（4〜8個・隠れている・店内には無い）
     const trapCount = this.rng.int(4, 8);
     for (let i = 0; i < trapCount; i++) {
       const pos = randomFloorTile(this.rng, this.map, (x, y) =>
-        occupied(x, y) || this.traps.some((t) => t.x === x && t.y === y));
+        occupied(x, y) ||
+        this.traps.some((t) => t.x === x && t.y === y) ||
+        (this.shop && this.shop.room.contains(x, y)));
       if (pos) {
         const def = this.rng.weighted(TRAPS);
         this.traps.push({ def, x: pos.x, y: pos.y, revealed: false });
@@ -245,6 +278,7 @@ class Game {
         if (item.plus !== 0) base += (item.plus > 0 ? `+${item.plus}` : `${item.plus}`);
       }
       if (d.cat === "gadget") base += ` [${item.charges}]`;
+      if (d.cat === "pot") base += ` [${item.contents.length}/${item.capacity}]`;
       if (d.cat === "card" && item.count > 1) base += ` x${item.count}`;
     } else {
       base = this.fakeNames[d.id] || "なぞのアイテム";
@@ -278,6 +312,12 @@ class Game {
       dx = d.dx; dy = d.dy;
     }
     const nx = p.x + dx, ny = p.y + dy;
+
+    // 店主に話しかける（非敵対時）
+    if (this.shop && !this.shop.hostile &&
+        this.shop.keeper.x === nx && this.shop.keeper.y === ny) {
+      return this.payShop();
+    }
 
     // 攻撃対象がいるか
     const target = this.monsterAt(nx, ny);
@@ -357,7 +397,55 @@ class Game {
     }
     this.floorItems.splice(idx, 1);
     p.inventory.push(item);
-    this.log(`${this.displayName(item)} を拾った。`, "good");
+    if (item.shopPrice > 0 && this.shop && !this.shop.hostile) {
+      this.shop.unpaid += item.shopPrice;
+      this.log(`${this.displayName(item)} を手に取った。（${item.shopPrice} クレジット・未払い計 ${this.shop.unpaid}）`, "warn");
+    } else {
+      this.log(`${this.displayName(item)} を拾った。`, "good");
+    }
+  }
+
+  // 店主に隣接して話しかける（ぶつかる）と支払い
+  payShop() {
+    const shop = this.shop;
+    const p = this.player;
+    if (!shop || shop.hostile) return false;
+    if (shop.unpaid <= 0) {
+      this.log("「イラッシャイマセ。ゴユックリ ドウゾ」");
+      return this.endTurn();
+    }
+    if (p.credits >= shop.unpaid) {
+      p.credits -= shop.unpaid;
+      this.log(`${shop.unpaid} クレジットを支払った。「マイド アリ！」`, "good");
+      shop.unpaid = 0;
+      for (const it of p.inventory) it.shopPrice = 0;
+    } else {
+      this.log(`「オ会計 ${shop.unpaid} クレジット デス」（所持金が足りない……）`, "warn");
+    }
+    return this.endTurn();
+  }
+
+  // 未払いのまま店を出た → 泥棒
+  triggerThief() {
+    const shop = this.shop;
+    if (!shop || shop.hostile) return;
+    shop.hostile = true;
+    this.log("「ドロボー！！ ドロボー！！」 店中に警報が鳴り響く！", "bad");
+    // 店主が戦闘形態になって追ってくる
+    this.monsters.push(shop.keeper);
+    // 執行ユニットが階段を封鎖する
+    const enforcerDef = MONSTERS.find((m) => m.id === "security_enforcer");
+    for (let i = 0; i < 2; i++) {
+      const pos = { x: this.map.stairs.x + (i === 0 ? 1 : -1), y: this.map.stairs.y };
+      const spot = this.map.isWalkable(pos.x, pos.y) && !this.monsterAt(pos.x, pos.y)
+        ? pos
+        : randomFloorTile(this.rng, this.map, (x, y) => !!this.monsterAt(x, y));
+      if (spot) {
+        const e = new Monster(enforcerDef, spot.x, spot.y, this);
+        e.asleep = false;
+        this.monsters.push(e);
+      }
+    }
   }
 
   // ------------------------------------------------------------ 戦闘
@@ -513,6 +601,12 @@ class Game {
     if (!forced && this.map.get(this.player.x, this.player.y) !== TILE.STAIRS) {
       this.log("ここに降下シャフトはない。");
       return false;
+    }
+    if (this.shop && this.shop.unpaid > 0) {
+      // 未払い品を持ったままフロアを離脱 = 泥棒成功
+      this.log("商品を持ったまま逃げ切った！（泥棒成功）", "good");
+      this.shop.unpaid = 0;
+      for (const it of this.player.inventory) it.shopPrice = 0;
     }
     this.floor++;
     this.turn = 0;
@@ -702,8 +796,115 @@ class Game {
     item.x = p.x;
     item.y = p.y;
     this.floorItems.push(item);
-    this.log(`${this.displayName(item)} を置いた。`);
+
+    const inShop = this.shop && !this.shop.hostile && this.shop.room.contains(p.x, p.y);
+    if (inShop && item.shopPrice > 0) {
+      // 商品の返品
+      this.shop.unpaid = Math.max(0, this.shop.unpaid - item.shopPrice);
+      this.log(`${this.displayName(item)} を棚に戻した。（未払い計 ${this.shop.unpaid}）`);
+    } else if (inShop && item.def.price > 0) {
+      // 自分のアイテムを売却（買値の半額）
+      const sell = Math.max(10, Math.floor(item.def.price / 2) + item.plus * 25);
+      p.credits += sell;
+      item.shopPrice = item.def.price + item.plus * 50;
+      this.log(`${this.displayName(item)} を ${sell} クレジットで売却した。`, "good");
+    } else {
+      this.log(`${this.displayName(item)} を置いた。`);
+    }
     return this.endTurn();
+  }
+
+  // ------------------------------------------------------------ コンテナ（壺）
+  putIntoPot(pot, item) {
+    const p = this.player;
+    if (item === pot || item.def.cat === "pot") {
+      this.log("コンテナの中にコンテナは入らない。");
+      return false;
+    }
+    if (pot.contents.length >= pot.capacity) {
+      this.log("コンテナはもういっぱいだ。");
+      return false;
+    }
+    if (p.weapon === item) p.weapon = null;
+    if (p.shield === item) p.shield = null;
+    this.removeFromInventory(item);
+
+    if (pot.def.id === "synth_container") {
+      // 同じ装備は強化値を、同じガジェットは回数を合成
+      const base = pot.contents.find((c) => c.def.id === item.def.id);
+      if (base && (item.def.cat === "weapon" || item.def.cat === "shield")) {
+        base.plus += item.plus + 1; // 合成ボーナス+1
+        this.log(`合成成功！ ${this.displayName(base)} になった。`, "good");
+        return this.endTurn();
+      }
+      if (base && item.def.cat === "gadget") {
+        base.charges = Math.min(99, base.charges + item.charges);
+        this.log(`合成成功！ ${this.displayName(base)} になった。`, "good");
+        return this.endTurn();
+      }
+    }
+    pot.contents.push(item);
+    this.log(`${this.displayName(item)} をコンテナに入れた。`);
+    return this.endTurn();
+  }
+
+  takeFromPot(pot) {
+    const p = this.player;
+    if (pot.def.id === "synth_container") {
+      this.log("合成コンテナの中身は割らないと取り出せない。");
+      return false;
+    }
+    if (pot.contents.length === 0) {
+      this.log("コンテナは空だ。");
+      return false;
+    }
+    if (p.inventory.length >= MAX_INVENTORY) {
+      this.log("持ち物がいっぱいだ。");
+      return false;
+    }
+    const item = pot.contents.pop();
+    p.inventory.push(item);
+    this.log(`${this.displayName(item)} を取り出した。`);
+    return this.endTurn();
+  }
+
+  breakPot(pot) {
+    const p = this.player;
+    this.removeFromInventory(pot);
+    this.log(`${this.displayName(pot)} を叩き割った！`, "warn");
+    for (const item of pot.contents) {
+      if (p.inventory.length < MAX_INVENTORY) {
+        p.inventory.push(item);
+        this.log(`${this.displayName(item)} が転がり出た。`, "good");
+      } else {
+        // 持ち物がいっぱいなら足元周辺に落とす
+        const spot = this.findFreeDropSpot(p.x, p.y);
+        if (spot) {
+          item.x = spot.x;
+          item.y = spot.y;
+          this.floorItems.push(item);
+          this.log(`${this.displayName(item)} が床に転がった。`);
+        } else {
+          this.log(`${this.displayName(item)} はどこかへ消えてしまった……`, "bad");
+        }
+      }
+    }
+    pot.contents = [];
+    return this.endTurn();
+  }
+
+  findFreeDropSpot(cx, cy) {
+    for (let r = 0; r <= 2; r++) {
+      for (const d of DIRS8.concat([{ dx: 0, dy: 0 }])) {
+        const x = cx + d.dx * r, y = cy + d.dy * r;
+        if (this.map.isWalkable(x, y) &&
+            this.map.get(x, y) !== TILE.STAIRS &&
+            !this.floorItems.some((it) => it.x === x && it.y === y)) {
+          return { x, y };
+        }
+      }
+    }
+    return null;
   }
 
   // ------------------------------------------------------------ 投げる/ガジェット（直線）
@@ -730,6 +931,24 @@ class Game {
       if (p.weapon === item) p.weapon = null;
       if (p.shield === item) p.shield = null;
       this.removeFromInventory(item);
+    }
+
+    // コンテナは投げると割れて中身が散らばる
+    if (item.def.cat === "pot") {
+      this.log(`${this.displayName(item)} は砕け散った！`, "warn");
+      if (monster) {
+        monster.hp -= this.rng.int(1, 2);
+        if (monster.hp <= 0) this.killMonster(monster, true);
+      }
+      for (const inner of item.contents) {
+        const spot = this.findFreeDropSpot(x, y);
+        if (spot) {
+          inner.x = spot.x;
+          inner.y = spot.y;
+          this.floorItems.push(inner);
+        }
+      }
+      return this.endTurn();
     }
 
     if (!monster) {
@@ -858,6 +1077,12 @@ class Game {
     if (this.state !== "play") return true;
     this.turn++;
     const p = this.player;
+
+    // 未払い商品を持ったまま店を離れた → 泥棒（ワープ系の移動も含む）
+    if (this.shop && !this.shop.hostile && this.shop.unpaid > 0 &&
+        !this.shop.room.containsWithBorder(p.x, p.y)) {
+      this.triggerThief();
+    }
 
     // 状態異常カウント
     for (const key of ["sleep", "confuse", "stun", "slow"]) {
@@ -1079,6 +1304,8 @@ class Game {
     }
     if (this.monsterAt(nx, ny)) return false;
     if (this.player.x === nx && this.player.y === ny) return false;
+    if (this.shop && !this.shop.hostile &&
+        this.shop.keeper.x === nx && this.shop.keeper.y === ny) return false;
     m.x = nx;
     m.y = ny;
     return true;

@@ -133,6 +133,70 @@ vm.runInContext(`
   g5.resetRun();
   record(g5.player.level === 1 && g5.player.inventory.length === 1, "リセットでLv1・持ち物初期化");
 
+  // --- 店: 購入・支払い・泥棒 ---
+  let g7 = null;
+  for (let seed = 1; seed < 300; seed++) {
+    const g = new Game(seed);
+    g.state = "play";
+    g.floor = 2;
+    g.generateNewFloor();
+    if (g.shop) { g7 = g; break; }
+  }
+  record(g7 !== null, "店が生成される");
+  if (g7) {
+    const p7 = g7.player;
+    p7.maxHp = 9999; p7.hp = 9999; // テスト中に倒されないように
+    const goods = g7.floorItems.find(it => it.shopPrice > 0);
+    record(goods, "店に値札付きの商品が並んでいる");
+    record(g7.shop.keeper.def.id === "merchant_droid", "店主がいる");
+    // 商品を拾うと未払いになる
+    p7.x = goods.x; p7.y = goods.y;
+    g7.tryPickup(true);
+    record(g7.shop.unpaid === goods.shopPrice, "商品を拾うと未払いになる");
+    // 支払い
+    p7.credits = g7.shop.unpaid + 100;
+    g7.payShop();
+    record(g7.shop.unpaid === 0 && goods.shopPrice === 0, "店主に支払うと未払いが消える");
+    // 泥棒: もう一度商品を拾って店外へ
+    const goods2 = g7.floorItems.find(it => it.shopPrice > 0);
+    if (goods2) {
+      p7.x = goods2.x; p7.y = goods2.y;
+      g7.tryPickup(true);
+      const outside = g7.map.rooms.find(r => r !== g7.shop.room);
+      p7.x = outside.cx; p7.y = outside.cy;
+      const monstersBefore = g7.monsters.length;
+      g7.endTurn();
+      record(g7.shop.hostile, "未払いのまま店を出ると泥棒になる");
+      record(g7.monsters.includes(g7.shop.keeper), "店主が戦闘形態で追ってくる");
+      record(g7.monsters.length >= monstersBefore + 1, "執行ユニットが出現する");
+    }
+  }
+
+  // --- コンテナ: 収納・取り出し・合成・割る ---
+  const g8 = new Game(444);
+  g8.state = "play";
+  g8.monsters = [];
+  const p8 = g8.player;
+  const storage = new Item(g8.itemDef("storage_container"), g8.rng);
+  const nano = new Item(g8.itemDef("repair_nano"), g8.rng);
+  p8.inventory.push(storage, nano);
+  g8.putIntoPot(storage, nano);
+  record(storage.contents.length === 1 && !p8.inventory.includes(nano), "ストレージコンテナに収納できる");
+  g8.takeFromPot(storage);
+  record(storage.contents.length === 0 && p8.inventory.includes(nano), "ストレージコンテナから取り出せる");
+  // 合成
+  const synth = new Item(g8.itemDef("synth_container"), g8.rng);
+  const sword1 = new Item(g8.itemDef("pulse_blade"), g8.rng);
+  const sword2 = new Item(g8.itemDef("pulse_blade"), g8.rng);
+  sword1.plus = 2; sword2.plus = 3;
+  p8.inventory.push(synth, sword1, sword2);
+  g8.putIntoPot(synth, sword1);
+  g8.putIntoPot(synth, sword2);
+  record(synth.contents.length === 1 && synth.contents[0].plus === 6, "同じ武器を合成すると強化値が合算+1される (got +" + synth.contents[0].plus + ")");
+  record(g8.takeFromPot(synth) === false, "合成コンテナからは直接取り出せない");
+  g8.breakPot(synth);
+  record(!p8.inventory.includes(synth) && p8.inventory.includes(sword1), "割ると中身が手に入る");
+
   // --- バックアップチップで復活 ---
   const g6 = new Game(222);
   g6.state = "play";

@@ -77,6 +77,16 @@ const MONSTERS = [
     desc: "規格外の超大型機体。倒せば莫大な経験値を得られるが、近付くのは命懸け。",
   },
   {
+    id: "merchant_droid", name: "マーチャントドロイド", glyph: "M", color: "#ffd866",
+    hp: 120, atk: 35, def: 18, exp: 1000, speed: 2, floors: [0, 0], rare: true,
+    desc: "店を営む商業ドロイド。商品を盗めば、最強クラスの戦闘形態が牙を剥く。",
+  },
+  {
+    id: "security_enforcer", name: "セキュリティエンフォーサー", glyph: "E", color: "#ff7a00",
+    hp: 60, atk: 22, def: 12, exp: 150, speed: 1, floors: [0, 0], rare: true,
+    desc: "泥棒を取り締まる執行ユニット。降下シャフトを封鎖する。",
+  },
+  {
     id: "togro_avatar", name: "トグロ・アバター", glyph: "Ψ", color: "#ff0044",
     hp: 80, atk: 20, def: 12, exp: 500, speed: 1, floors: [20, 20], boss: true,
     desc: "AI《トグロ》の戦闘端末。神髄コアを守護する。",
@@ -260,6 +270,18 @@ const ITEMS = [
     id: "aegis_field", name: "イージスフィールド", cat: "shield", glyph: "[", color: "#ffae42",
     w: 4, power: 11, identified: true, price: 2400,
     desc: "軍用の力場発生装置。最高クラスの防御力。",
+  },
+
+  // ===== コンテナ（壺） =====
+  {
+    id: "storage_container", name: "ストレージコンテナ", cat: "pot", glyph: "U", color: "#c8b8ff",
+    w: 8, capacity: [3, 5], identified: true, price: 600,
+    desc: "アイテムを容量分まで収納できる。出し入れ自由で持ち物枠の節約になる。",
+  },
+  {
+    id: "synth_container", name: "合成コンテナ", cat: "pot", glyph: "U", color: "#ff8ad8",
+    w: 5, capacity: [2, 3], identified: true, price: 1500,
+    desc: "同じ装備を入れると強化値を、同じガジェットを入れると回数を合成する。取り出すには割るしかない。",
   },
 
   // ===== クレジット（お金） =====

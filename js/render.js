@@ -44,6 +44,17 @@ class Renderer {
       }
     }
 
+    // 店の絨毯（金色のフロア）
+    if (game.shop) {
+      const r = game.shop.room;
+      ctx.fillStyle = "rgba(255, 216, 102, 0.10)";
+      for (let y = r.y; y < r.y + r.h; y++) {
+        for (let x = r.x; x < r.x + r.w; x++) {
+          if (game.memory[y * map.w + x]) ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+        }
+      }
+    }
+
     // アイテム
     for (const it of game.floorItems) {
       if (!game.memory[it.y * map.w + it.x]) continue;
@@ -62,6 +73,14 @@ class Renderer {
       if (!game.visible[m.y * map.w + m.x]) continue;
       this.drawGlyph(ctx, m.x, m.y, m.def.glyph, m.def.color);
       this.drawHpBar(ctx, m);
+    }
+
+    // 店主（非敵対時。敵対後は通常モンスターとして描画される）
+    if (game.shop && !game.shop.hostile) {
+      const k = game.shop.keeper;
+      if (game.visible[k.y * map.w + k.x]) {
+        this.drawGlyph(ctx, k.x, k.y, k.def.glyph, k.def.color);
+      }
     }
 
     // 仲間
