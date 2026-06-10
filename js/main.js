@@ -213,4 +213,16 @@
   // 初期描画
   refresh();
   game.log("Enter キーまたは画面タップで潜入を開始してください。", "sys");
+
+  // 画像アセットの読み込み（あればスプライト描画+アニメーションループに切替）
+  loadAssets().then(() => {
+    refresh();
+    if (ASSETS.loaded) {
+      const loop = () => {
+        renderer.draw(game);
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+  });
 })();
