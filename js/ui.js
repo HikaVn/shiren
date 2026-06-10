@@ -11,8 +11,13 @@ class UI {
     this.actionIndex = 0;
     this.selectedItem = null;
     this.pendingDirection = null; // {verb: "throw"|"gadget", item}
+    this.onAction = null; // タップ操作後の再描画フック（main.js が設定）
 
     game.onMessage = (text, kind) => this.appendLog(text, kind);
+  }
+
+  notifyAction() {
+    if (this.onAction) this.onAction();
   }
 
   appendLog(text, kind) {
@@ -64,9 +69,9 @@ class UI {
     if (cat === "chip") acts.push({ id: "use", label: "起動する" });
     if (cat === "gadget") acts.push({ id: "gadget", label: "発射する" });
     if (cat === "pot") {
-      acts.push({ id: "potIn", label: "入れる" });
-      if (item.def.id === "storage_container") acts.push({ id: "potOut", label: "出す" });
-      acts.push({ id: "potBreak", label: "割る" });
+      acts.push({ id: "potIn", label: "収納する" });
+      if (item.def.id === "storage_container") acts.push({ id: "potOut", label: "取り出す" });
+      acts.push({ id: "potBreak", label: "破壊する" });
     }
     if (cat === "weapon" || cat === "shield") {
       const equipped = this.game.player.weapon === item || this.game.player.shield === item;
@@ -104,6 +109,7 @@ class UI {
         div.addEventListener("click", () => {
           this.menuIndex = i;
           this.selectMenuItem();
+          this.notifyAction();
         });
         el.appendChild(div);
       });
@@ -111,6 +117,7 @@ class UI {
       hint.className = "hint";
       hint.textContent = "↑↓: 選択 / Enter: 決定 / Esc: 閉じる";
       el.appendChild(hint);
+      this.appendBackButton(el, "× 閉じる");
     } else if (this.menuMode === "action") {
       const item = this.selectedItem;
       const title = document.createElement("div");
@@ -125,6 +132,7 @@ class UI {
         div.addEventListener("click", () => {
           this.actionIndex = i;
           this.executeAction();
+          this.notifyAction();
         });
         el.appendChild(div);
       });
@@ -132,6 +140,7 @@ class UI {
       hint.className = "hint";
       hint.textContent = "↑↓: 選択 / Enter: 決定 / Esc: 戻る";
       el.appendChild(hint);
+      this.appendBackButton(el, "← 戻る");
     } else if (this.menuMode === "potInsert") {
       const title = document.createElement("div");
       title.className = "title";
@@ -145,22 +154,38 @@ class UI {
         div.addEventListener("click", () => {
           this.potIndex = i;
           this.executePotInsert();
+          this.notifyAction();
         });
         el.appendChild(div);
       });
       const hint = document.createElement("div");
       hint.className = "hint";
-      hint.textContent = "↑↓: 選択 / Enter: 入れる / Esc: 戻る";
+      hint.textContent = "↑↓: 選択 / Enter: 収納 / Esc: 戻る";
       el.appendChild(hint);
+      this.appendBackButton(el, "← 戻る");
     } else if (this.menuMode === "direction") {
       const title = document.createElement("div");
       title.className = "title";
       title.textContent = "方向を選択";
       el.appendChild(title);
       const p = document.createElement("div");
-      p.textContent = "矢印キー（または QEZC で斜め）で方向を選んでください。Esc でキャンセル。";
+      p.textContent = "矢印キー・QEZC・タッチパッドで方向を選んでください。Esc でキャンセル。";
       el.appendChild(p);
+      this.appendBackButton(el, "× キャンセル");
     }
+  }
+
+  // タッチ操作用の「戻る/閉じる」行
+  appendBackButton(el, label) {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.style.color = "#6e87ad";
+    div.textContent = label;
+    div.addEventListener("click", () => {
+      this.handleMenuKey("Escape");
+      this.notifyAction();
+    });
+    el.appendChild(div);
   }
 
   selectMenuItem() {

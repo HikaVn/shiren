@@ -354,7 +354,7 @@ class Game {
     if (this.monsterHouseRoom && !this.monsterHouseTriggered &&
         this.monsterHouseRoom.contains(p.x, p.y)) {
       this.monsterHouseTriggered = true;
-      this.log("モンスターハウスだ！！", "bad");
+      this.log("ホスタイルネストだ！！ 敵性ユニットが一斉に起動した！", "bad");
       for (const m of this.monsters) {
         if (this.monsterHouseRoom.containsWithBorder(m.x, m.y)) m.asleep = false;
       }
@@ -388,7 +388,7 @@ class Game {
     if (item.def.cat === "goal") {
       this.floorItems.splice(idx, 1);
       this.state = "clear";
-      this.log("神髄コアを手に入れた！！", "good");
+      this.log("シンギュラリティコアを手に入れた！！", "good");
       return;
     }
     if (p.inventory.length >= MAX_INVENTORY) {
@@ -430,7 +430,7 @@ class Game {
     const shop = this.shop;
     if (!shop || shop.hostile) return;
     shop.hostile = true;
-    this.log("「ドロボー！！ ドロボー！！」 店中に警報が鳴り響く！", "bad");
+    this.log("『窃盗ヲ検知。排除プロトコル起動』 ——店内に警報が鳴り響く！", "bad");
     // 店主が戦闘形態になって追ってくる
     this.monsters.push(shop.keeper);
     // 執行ユニットが階段を封鎖する
@@ -503,7 +503,7 @@ class Game {
     if (byPlayer) this.gainExp(m.exp);
     // ボス撃破メッセージ
     if (m.def.boss) {
-      this.log("トグロ・アバターが機能停止した。コアは目の前だ！", "sys");
+      this.log("セルペンス・アバターが機能停止した。コアは目の前だ！", "sys");
     }
   }
 
@@ -603,8 +603,8 @@ class Game {
       return false;
     }
     if (this.shop && this.shop.unpaid > 0) {
-      // 未払い品を持ったままフロアを離脱 = 泥棒成功
-      this.log("商品を持ったまま逃げ切った！（泥棒成功）", "good");
+      // 未払い品を持ったままフロアを離脱 = 強奪成功
+      this.log("商品を持ったまま逃げ切った！（強奪成功）", "good");
       this.shop.unpaid = 0;
       for (const it of this.player.inventory) it.shopPrice = 0;
     }
@@ -674,7 +674,7 @@ class Game {
       case "muscle_booster":
         p.maxStrength += 1;
         p.strength = p.maxStrength;
-        this.log(`ちからが ${p.strength} に上がった！`, "good");
+        this.log(`身体出力が ${p.strength} に上がった！`, "good");
         break;
       case "exp_chip_serum":
         this.gainExp(expForLevel(p.level + 1) - p.exp);
@@ -684,7 +684,7 @@ class Game {
         return false;
       case "toxin_vial":
         p.strength = Math.max(1, p.strength - 1);
-        this.log("毒だ！ ちからが下がった……", "bad");
+        this.log("毒だ！ 身体出力が低下した……", "bad");
         break;
       case "confusion_gas":
         p.status.confuse = 10;
@@ -851,7 +851,7 @@ class Game {
   takeFromPot(pot) {
     const p = this.player;
     if (pot.def.id === "synth_container") {
-      this.log("合成コンテナの中身は割らないと取り出せない。");
+      this.log("合成コンテナの中身は筐体を破壊しないと取り出せない。");
       return false;
     }
     if (pot.contents.length === 0) {
@@ -871,7 +871,7 @@ class Game {
   breakPot(pot) {
     const p = this.player;
     this.removeFromInventory(pot);
-    this.log(`${this.displayName(pot)} を叩き割った！`, "warn");
+    this.log(`${this.displayName(pot)} の筐体を破壊した！`, "warn");
     for (const item of pot.contents) {
       if (p.inventory.length < MAX_INVENTORY) {
         p.inventory.push(item);
