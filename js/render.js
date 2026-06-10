@@ -1,13 +1,15 @@
-// 描画（Canvas）— 近未来ネオン調のタイル表示
-// スマホ等の小画面ではプレイヤー追従カメラで一部領域のみ拡大表示する
+// 描画（Canvas）— HD-2D風のリッチ演出
+//  疑似3D壁 / 動的ライティング / 移動補間 / パーティクル / ダメージポップ / 画面シェイク
+//  スプライトアセットがあれば差し替え、無ければ手続き描画にフォールバック
 "use strict";
 
 const CELL = 22; // タイル1マスのピクセルサイズ
 
 const COLORS = {
   bg: "#05080f",
-  wall: "#101a2c",
-  wallEdge: "#1d3050",
+  wallTop: "#16233a",
+  wallFront: "#0b1424",
+  wallEdge: "#2a4470",
   floor: "#0c1626",
   floorGrid: "#13243d",
   corridor: "#0a1220",
@@ -15,10 +17,8 @@ const COLORS = {
   player: "#4dff88",
   ally: "#7fd4ff",
   itemDefault: "#ffd866",
-  trapHidden: null,
   trapVisible: "#ff5c8a",
-  fovDim: "rgba(3, 6, 12, 0.78)",
-  unseen: "#02040a",
+  unseenDim: "rgba(3, 6, 12, 0.78)",
 };
 
 class Renderer {
@@ -29,9 +29,11 @@ class Renderer {
     this.viewH = 0;
     this.camX = 0;
     this.camY = 0;
+    this.now = 0;
+    this.effects = []; // 再生中のエフェクト
+    this.shake = 0; // 画面シェイクの残量
   }
 
-  // ビューポートのタイル数を設定（フルマップ or 追従カメラ）
   setView(viewW, viewH) {
     if (this.viewW !== viewW || this.viewH !== viewH) {
       this.viewW = viewW;
@@ -41,34 +43,48 @@ class Renderer {
     }
   }
 
+  // エンティティの表示座標を実座標へ滑らかに近付ける（テレポート級の移動は即時）
+  lerpEntity(e, dt) {
+    if (e._rx === undefined || Math.abs(e._rx - e.x) > 3 || Math.abs(e._ry - e.y) > 3) {
+      e._rx = e.x;
+      e._ry = e.y;
+      return;
+    }
+    const k = Math.min(1, dt * 14);
+    e._rx += (e.x - e._rx) * k;
+    e._ry += (e.y - e._ry) * k;
+  }
+
   updateCamera(game) {
     const { map, player } = game;
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-    this.camX = clamp(player.x - Math.floor(this.viewW / 2), 0, Math.max(0, map.w - this.viewW));
-    this.camY = clamp(player.y - Math.floor(this.viewH / 2), 0, Math.max(0, map.h - this.viewH));
+    const fx = player._rx !== undefined ? player._rx : player.x;
+    const fy = player._ry !== undefined ? player._ry : player.y;
+    this.camX = clamp(fx - Math.floor(this.viewW / 2), 0, Math.max(0, map.w - this.viewW));
+    this.camY = clamp(fy - Math.floor(this.viewH / 2), 0, Math.max(0, map.h - this.viewH));
   }
 
   inView(x, y) {
-    return x >= this.camX && x < this.camX + this.viewW &&
-           y >= this.camY && y < this.camY + this.viewH;
+    return x >= this.camX - 1 && x < this.camX + this.viewW + 1 &&
+           y >= this.camY - 1 && y < this.camY + this.viewH + 1;
   }
 
   px(x) { return (x - this.camX) * CELL; }
   py(y) { return (y - this.camY) * CELL; }
 
-  // スプライトがあれば描画して true、無ければ false（呼び出し側でグリフ描画）
+  // スプライトがあれば描画して true。縦長スプライトは足元基準（bottom-anchor）
   drawSprite(ctx, x, y, keys, scale = 1) {
     if (typeof getSprite !== "function") return false;
     for (const key of keys) {
       const spr = getSprite(key);
       if (!spr) continue;
       const f = spriteFrame(spr, this.now);
-      const size = CELL * scale;
-      const off = (CELL - size) / 2;
+      const w = CELL * scale;
+      const h = w * (spr.frameH / spr.frameW);
       ctx.drawImage(
         spr.img,
         f * spr.frameW, 0, spr.frameW, spr.frameH,
-        this.px(x) + off, this.py(y) + off, size, size
+        this.px(x) + (CELL - w) / 2, this.py(y) + CELL - h, w, h
       );
       return true;
     }
@@ -78,18 +94,49 @@ class Renderer {
   draw(game) {
     const { map, player } = game;
     if (!this.viewW) this.setView(map.w, map.h);
-    this.updateCamera(game);
+
+    const prev = this.now;
     this.now = (typeof performance !== "undefined") ? performance.now() : Date.now();
+    const dt = Math.min(0.1, (this.now - (prev || this.now)) / 1000);
+
+    // ゲーム側のエフェクトキューを取り込む
+    if (game.fx && game.fx.length) {
+      for (const fx of game.fx.splice(0)) {
+        fx.start = this.now;
+        if (fx.type === "shake") this.shake = Math.min(8, this.shake + fx.power);
+        else this.effects.push(fx);
+      }
+    }
+
+    // 移動補間
+    this.lerpEntity(player, dt);
+    for (const m of game.monsters) this.lerpEntity(m, dt);
+    if (game.shop) this.lerpEntity(game.shop.keeper, dt);
+
+    this.updateCamera(game);
     const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    const x0 = this.camX, y0 = this.camY;
-    const x1 = Math.min(map.w, x0 + this.viewW), y1 = Math.min(map.h, y0 + this.viewH);
+    // 画面シェイク
+    if (this.shake > 0.2) {
+      ctx.translate(
+        (Math.random() - 0.5) * this.shake * 2,
+        (Math.random() - 0.5) * this.shake * 2
+      );
+      this.shake *= Math.pow(0.001, dt); // 急減衰
+    } else {
+      this.shake = 0;
+    }
 
+    const x0 = Math.floor(this.camX), y0 = Math.floor(this.camY);
+    const x1 = Math.min(map.w, x0 + this.viewW + 2), y1 = Math.min(map.h, y0 + this.viewH + 2);
+
+    // --- タイル ---
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
-        if (!game.memory[y * map.w + x]) continue; // 未踏破は描かない
+        if (!game.memory[y * map.w + x]) continue;
         this.drawTile(ctx, map, x, y, game);
       }
     }
@@ -100,22 +147,21 @@ class Renderer {
       ctx.fillStyle = "rgba(255, 216, 102, 0.10)";
       for (let y = r.y; y < r.y + r.h; y++) {
         for (let x = r.x; x < r.x + r.w; x++) {
-          if (game.memory[y * map.w + x] && this.inView(x, y)) {
-            ctx.fillRect(this.px(x), this.py(y), CELL, CELL);
-          }
+          if (game.memory[y * map.w + x]) ctx.fillRect(this.px(x), this.py(y), CELL, CELL);
         }
       }
     }
 
-    // アイテム
+    // --- アイテム（発光パルス付き） ---
+    const pulse = 0.6 + 0.4 * Math.sin(this.now / 300);
     for (const it of game.floorItems) {
       if (!game.memory[it.y * map.w + it.x] || !this.inView(it.x, it.y)) continue;
       if (!this.drawSprite(ctx, it.x, it.y, [`item_${it.def.id}`, `item_cat_${it.def.cat}`])) {
-        this.drawGlyph(ctx, it.x, it.y, it.def.glyph, it.def.color || COLORS.itemDefault);
+        this.drawGlyph(ctx, it.x, it.y, it.def.glyph, it.def.color || COLORS.itemDefault, 0, 8 * pulse);
       }
     }
 
-    // 罠（発見済みのみ）
+    // --- 罠（発見済みのみ） ---
     for (const trap of game.traps) {
       if (trap.revealed && game.visible[trap.y * map.w + trap.x] && this.inView(trap.x, trap.y)) {
         if (!this.drawSprite(ctx, trap.x, trap.y, [`trap_${trap.def.id}`, "trap"])) {
@@ -124,39 +170,38 @@ class Renderer {
       }
     }
 
-    // モンスター（視界内のみ・大型機は2倍サイズ）
+    // --- エンティティ（y順に描画・上下ゆれ付き） ---
+    const drawables = [];
     for (const m of game.monsters) {
-      if (!game.visible[m.y * map.w + m.x] || !this.inView(m.x, m.y)) continue;
-      const scale = m.def.big ? 2 : 1;
-      if (!this.drawSprite(ctx, m.x, m.y, [`mon_${m.def.id}`], scale)) {
-        this.drawGlyph(ctx, m.x, m.y, m.def.glyph, m.def.color);
-      }
-      this.drawHpBar(ctx, m);
+      if (game.visible[m.y * map.w + m.x] && this.inView(m.x, m.y)) drawables.push({ kind: "mon", e: m });
     }
-
-    // 店主（非敵対時。敵対後は通常モンスターとして描画される）
     if (game.shop && !game.shop.hostile) {
       const k = game.shop.keeper;
-      if (game.visible[k.y * map.w + k.x] && this.inView(k.x, k.y)) {
-        if (!this.drawSprite(ctx, k.x, k.y, [`mon_${k.def.id}`])) {
-          this.drawGlyph(ctx, k.x, k.y, k.def.glyph, k.def.color);
+      if (game.visible[k.y * map.w + k.x] && this.inView(k.x, k.y)) drawables.push({ kind: "keeper", e: k });
+    }
+    drawables.push({ kind: "player", e: player });
+    drawables.sort((a, b) => (a.e._ry || a.e.y) - (b.e._ry || b.e.y));
+
+    for (const d of drawables) {
+      const e = d.e;
+      const bob = Math.sin(this.now / 250 + (e.x + e.y) * 1.7) * 1.5;
+      const rx = e._rx !== undefined ? e._rx : e.x;
+      const ry = e._ry !== undefined ? e._ry : e.y;
+      if (d.kind === "player") {
+        if (!this.drawSpriteAt(ctx, rx, ry, ["player"], 1)) {
+          this.drawGlyphAt(ctx, rx, ry, "@", COLORS.player, bob, 10);
         }
+      } else {
+        const scale = e.def.big ? 2 : 1;
+        if (!this.drawSpriteAt(ctx, rx, ry, [`mon_${e.def.id}`], scale)) {
+          this.drawGlyphAt(ctx, rx, ry, e.def.glyph, e.def.color, bob, 6);
+        }
+        if (d.kind === "mon") this.drawHpBar(ctx, e, rx, ry);
       }
     }
 
-    // 仲間
-    if (game.ally && game.ally.hp > 0 && this.inView(game.ally.x, game.ally.y)) {
-      this.drawGlyph(ctx, game.ally.x, game.ally.y, "@", COLORS.ally);
-      this.drawHpBar(ctx, game.ally);
-    }
-
-    // プレイヤー
-    if (!this.drawSprite(ctx, player.x, player.y, ["player"])) {
-      this.drawGlyph(ctx, player.x, player.y, "@", COLORS.player);
-    }
-
-    // 視界外の踏破済みエリアを暗くする
-    ctx.fillStyle = COLORS.fovDim;
+    // --- 視界外の踏破済みエリアを暗くする ---
+    ctx.fillStyle = COLORS.unseenDim;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         const i = y * map.w + x;
@@ -165,19 +210,75 @@ class Renderer {
         }
       }
     }
+
+    // --- 動的ライティング（プレイヤー光源 + 周辺減光） ---
+    this.drawLighting(ctx, game);
+
+    // --- エフェクト（パーティクル・ポップ） ---
+    this.drawEffects(ctx);
+  }
+
+  // 実数タイル座標版の描画ヘルパ
+  drawSpriteAt(ctx, fx, fy, keys, scale) {
+    if (typeof getSprite !== "function") return false;
+    for (const key of keys) {
+      const spr = getSprite(key);
+      if (!spr) continue;
+      const f = spriteFrame(spr, this.now);
+      const w = CELL * scale;
+      const h = w * (spr.frameH / spr.frameW);
+      ctx.drawImage(
+        spr.img,
+        f * spr.frameW, 0, spr.frameW, spr.frameH,
+        (fx - this.camX) * CELL + (CELL - w) / 2,
+        (fy - this.camY) * CELL + CELL - h,
+        w, h
+      );
+      return true;
+    }
+    return false;
+  }
+
+  drawGlyphAt(ctx, fx, fy, glyph, color, bobY = 0, glow = 6) {
+    ctx.font = `bold ${CELL - 4}px "Courier New", monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = glow;
+    ctx.fillText(
+      glyph,
+      (fx - this.camX) * CELL + CELL / 2,
+      (fy - this.camY) * CELL + CELL / 2 + 1 + bobY
+    );
+    ctx.shadowBlur = 0;
+  }
+
+  drawGlyph(ctx, x, y, glyph, color, bobY = 0, glow = 6) {
+    this.drawGlyphAt(ctx, x, y, glyph, color, bobY, glow);
   }
 
   drawTile(ctx, map, x, y, game) {
     const t = map.get(x, y);
-    const px = this.px(x),
-      py = this.py(y);
+    const px = this.px(x), py = this.py(y);
     if (t === TILE.WALL) {
       if (this.drawSprite(ctx, x, y, ["tile_wall"])) return;
-      ctx.fillStyle = COLORS.wall;
-      ctx.fillRect(px, py, CELL, CELL);
-      ctx.strokeStyle = COLORS.wallEdge;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
+      // 疑似3D壁: 下が歩行可能なら前面（暗い面）を見せる
+      const frontFace = map.isWalkable(x, y + 1);
+      if (frontFace) {
+        ctx.fillStyle = COLORS.wallTop;
+        ctx.fillRect(px, py, CELL, CELL * 0.55);
+        ctx.fillStyle = COLORS.wallFront;
+        ctx.fillRect(px, py + CELL * 0.55, CELL, CELL * 0.45);
+        ctx.fillStyle = COLORS.wallEdge;
+        ctx.fillRect(px, py + CELL * 0.55 - 1, CELL, 1.5);
+      } else {
+        ctx.fillStyle = COLORS.wallTop;
+        ctx.fillRect(px, py, CELL, CELL);
+        ctx.strokeStyle = "rgba(42, 68, 112, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
+      }
     } else if (t === TILE.FLOOR || t === TILE.STAIRS) {
       const inShop = game && game.shop && game.shop.room.contains(x, y);
       const floorKeys = inShop ? ["tile_shop", "tile_floor"] : ["tile_floor"];
@@ -190,7 +291,11 @@ class Renderer {
       }
       if (t === TILE.STAIRS) {
         if (!this.drawSprite(ctx, x, y, ["tile_stairs"])) {
-          this.drawGlyph(ctx, x, y, "▼", COLORS.stairs);
+          // 降下シャフトはネオンの発光パルス
+          const a = 0.5 + 0.5 * Math.sin(this.now / 350);
+          ctx.fillStyle = `rgba(0, 229, 255, ${0.12 + 0.1 * a})`;
+          ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+          this.drawGlyph(ctx, x, y, "▼", COLORS.stairs, 0, 10 + 6 * a);
         }
       }
     } else if (t === TILE.CORRIDOR) {
@@ -200,26 +305,86 @@ class Renderer {
     }
   }
 
-  drawGlyph(ctx, x, y, glyph, color) {
-    ctx.font = `bold ${CELL - 4}px "Courier New", monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 6;
-    ctx.fillText(glyph, this.px(x) + CELL / 2, this.py(y) + CELL / 2 + 1);
-    ctx.shadowBlur = 0;
-  }
-
-  drawHpBar(ctx, entity) {
+  drawHpBar(ctx, entity, rx, ry) {
     const ratio = Math.max(0, entity.hp / entity.maxHp);
     if (ratio >= 1) return;
-    const px = this.px(entity.x),
-      py = this.py(entity.y);
+    const px = (rx - this.camX) * CELL, py = (ry - this.camY) * CELL;
     ctx.fillStyle = "#000";
     ctx.fillRect(px + 2, py + CELL - 4, CELL - 4, 3);
     ctx.fillStyle = ratio > 0.5 ? "#4dff88" : ratio > 0.25 ? "#ffd866" : "#ff5c5c";
     ctx.fillRect(px + 2, py + CELL - 4, (CELL - 4) * ratio, 3);
+  }
+
+  // プレイヤーを中心としたネオン光源。外側ほど暗くなる
+  drawLighting(ctx, game) {
+    const p = game.player;
+    const cx = ((p._rx !== undefined ? p._rx : p.x) - this.camX) * CELL + CELL / 2;
+    const cy = ((p._ry !== undefined ? p._ry : p.y) - this.camY) * CELL + CELL / 2;
+    const radius = CELL * 8;
+    const grad = ctx.createRadialGradient(cx, cy, CELL * 1.5, cx, cy, radius);
+    grad.addColorStop(0, "rgba(2, 4, 10, 0)");
+    grad.addColorStop(0.7, "rgba(2, 4, 10, 0.18)");
+    grad.addColorStop(1, "rgba(2, 4, 10, 0.5)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  // パーティクル・ダメージポップの描画と寿命管理
+  drawEffects(ctx) {
+    const alive = [];
+    for (const fx of this.effects) {
+      const t = (this.now - fx.start) / (fx.duration || 700);
+      if (t >= 1) continue;
+      alive.push(fx);
+      const sx = (fx.x - this.camX) * CELL + CELL / 2;
+      const sy = (fx.y - this.camY) * CELL + CELL / 2;
+
+      if (fx.type === "pop") {
+        // ダメージ数字: 浮き上がってフェードアウト
+        ctx.font = `bold ${fx.big ? 16 : 13}px "Courier New", monospace`;
+        ctx.textAlign = "center";
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = fx.color || "#fff";
+        ctx.shadowColor = fx.color || "#fff";
+        ctx.shadowBlur = 4;
+        ctx.fillText(String(fx.text), sx, sy - 6 - t * 16);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      } else if (fx.type === "burst") {
+        // 撃破: 8方向に散るパーティクル
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = fx.color || "#ffd866";
+        for (let i = 0; i < 8; i++) {
+          const ang = (Math.PI * 2 * i) / 8;
+          const dist = t * CELL * 1.4;
+          ctx.fillRect(sx + Math.cos(ang) * dist - 1.5, sy + Math.sin(ang) * dist - 1.5, 3, 3);
+        }
+        ctx.globalAlpha = 1;
+      } else if (fx.type === "ring") {
+        // EMPバースト: 広がるリング
+        ctx.globalAlpha = 1 - t;
+        ctx.strokeStyle = fx.color || "#ffe25c";
+        ctx.lineWidth = 3 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(sx, sy, t * CELL * 6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (fx.type === "beam") {
+        // レーザー: 始点から終点への光線
+        ctx.globalAlpha = 1 - t;
+        ctx.strokeStyle = fx.color || "#ff5c5c";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = fx.color || "#ff5c5c";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo((fx.x2 - this.camX) * CELL + CELL / 2, (fx.y2 - this.camY) * CELL + CELL / 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+    }
+    this.effects = alive;
   }
 }
 

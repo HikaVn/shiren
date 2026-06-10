@@ -214,15 +214,13 @@
   refresh();
   game.log("Enter キーまたは画面タップで潜入を開始してください。", "sys");
 
-  // 画像アセットの読み込み（あればスプライト描画+アニメーションループに切替）
-  loadAssets().then(() => {
-    refresh();
-    if (ASSETS.loaded) {
-      const loop = () => {
-        renderer.draw(game);
-        requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    }
-  });
+  // 画像アセットの読み込み（あれば自動でスプライト描画に切替）
+  loadAssets().then(() => refresh());
+
+  // 常時アニメーションループ（移動補間・発光パルス・パーティクル用）
+  const loop = () => {
+    renderer.draw(game);
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
 })();
