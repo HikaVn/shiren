@@ -57,10 +57,15 @@ class Game {
     this.rng = new RNG(seed);
     this.messages = [];
     this.onMessage = null; // UIフック
+    this.fx = []; // 描画エフェクトのキュー（render.js が消費）
     this.state = "title"; // title | play | gameover | clear
     this.deathCause = "";
     this.initIdentification();
     this.resetRun();
+  }
+
+  addFx(fx) {
+    this.fx.push(fx);
   }
 
   // 周回ごとの未識別名の割り当て（カテゴリ内でシャッフル）
@@ -485,6 +490,7 @@ class Game {
     // 命中率92%
     if (!this.rng.chance(0.92)) {
       this.log(`攻撃は ${target.name} に当たらなかった。`, "warn");
+      this.addFx({ type: "pop", x: target.x, y: target.y, text: "MISS", color: "#8aa0c0" });
       return;
     }
     target.asleep = false;
@@ -493,12 +499,14 @@ class Game {
     let dmg = this.calcDamage(this.playerAtkValue(), target.defense);
     if (this.player.overcharge) dmg = Math.round(dmg * 1.5); // オーバーチャージ補正
     target.hp -= dmg;
+    this.addFx({ type: "pop", x: target.x, y: target.y, text: dmg, color: "#ffffff", big: dmg >= 15 });
     this.log(`${target.name} に ${dmg} のダメージ！`);
     if (target.hp <= 0) this.killMonster(target, true);
   }
 
   killMonster(m, byPlayer) {
     this.monsters = this.monsters.filter((x) => x !== m);
+    this.addFx({ type: "burst", x: m.x, y: m.y, color: m.def.color, duration: 450 });
     this.log(`${m.name} を破壊した！`, "good");
     if (byPlayer) this.gainExp(m.exp);
     // ボス撃破メッセージ
@@ -523,6 +531,8 @@ class Game {
   damagePlayer(dmg, cause) {
     const p = this.player;
     p.hp -= dmg;
+    this.addFx({ type: "pop", x: p.x, y: p.y, text: dmg, color: "#ff5c5c", big: dmg >= 12 });
+    this.addFx({ type: "shake", power: Math.min(6, 1 + dmg / 3) });
     if (p.hp <= 0) {
       // バックアップチップで復活
       const backupIdx = p.inventory.findIndex((it) => it.def.id === "backup_chip");
@@ -666,10 +676,12 @@ class Game {
       case "repair_nano":
         if (p.hp >= p.maxHp) { p.maxHp += 1; p.hp = p.maxHp; this.log("最大HPが1上がった。", "good"); }
         else { p.hp = Math.min(p.maxHp, p.hp + 25); this.log("HPが回復した。", "good"); }
+        this.addFx({ type: "pop", x: p.x, y: p.y, text: "+HP", color: "#4dff88" });
         break;
       case "full_repair_nano":
         if (p.hp >= p.maxHp) { p.maxHp += 2; p.hp = p.maxHp; this.log("最大HPが2上がった。", "good"); }
         else { p.hp = Math.min(p.maxHp, p.hp + 100); this.log("HPが大きく回復した。", "good"); }
+        this.addFx({ type: "pop", x: p.x, y: p.y, text: "+HP", color: "#4dff88" });
         break;
       case "muscle_booster":
         p.maxStrength += 1;
@@ -739,6 +751,7 @@ class Game {
         break;
       case "emp_chip": {
         this.identify(item);
+        this.addFx({ type: "ring", x: p.x, y: p.y, color: "#ffe25c", duration: 550 });
         const room = this.map.roomAt(p.x, p.y);
         let hit = 0;
         for (const m of this.monsters.slice()) {
@@ -1255,6 +1268,7 @@ class Game {
     if (m.def.ability === "ranged" && !adjacent) {
       if ((m.x === p.x || m.y === p.y || Math.abs(distX) === Math.abs(distY)) && this.lineOfSight(m, p)) {
         const dmg = this.calcDamage(m.atk, this.playerDefValue());
+        this.addFx({ type: "beam", x: m.x, y: m.y, x2: p.x, y2: p.y, color: "#ff5c5c", duration: 350 });
         this.log(`${m.name} のレーザー！ ${dmg} ダメージ。`, "bad");
         this.damagePlayer(dmg, m.def.name);
         return;
